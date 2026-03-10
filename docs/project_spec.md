@@ -71,3 +71,27 @@ Github Issue Triage Project Specification
 - **Predictive Triage**: Use historical data to predict the likelihood of an issue being resolved within a certain timeframe.
 - **Multi-Language Support**: Extend the system to support issues in multiple languages.
 - **Performance metrics**: Implement metrics to evaluate the accuracy and effectiveness of the triage system (e.g., precision, recall, F1 score).
+
+**Phase Based Implementation**:
+1. **Phase 1**: Infrastructure 
+   - FastAPI backend setup
+   - GitHub webhook integration
+   - Basic issue processing and logging
+   - payload parsing and validation
+   - Github API client implementation
+2. **Phase 2**: LLM Integration
+    - LLM integration for issue classification and labeling
+    - Priority prediction implementation
+    - Label suggestion implementation
+    - Triage comment generation
+3. **Phase 3**: RAG Implementation
+    - Embed repository docs
+    - Store embeddings in vector database
+    - Retrieve similar past issues and documentation for context
+    - Provide retrieved context for triage
+4. **Phase 4**: Evaluation and Observability
+    - Implement logging and monitoring
+    - Collect feedback from maintainers
+    - Evaluate triage accuracy and performance metrics
+    - Error Monitoring and Alerting
+
