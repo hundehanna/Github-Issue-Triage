@@ -1,4 +1,8 @@
+import logging
+
 from app.models.triage import TriageResult
+
+logger = logging.getLogger(__name__)
 
 
 def triage_issue(repo_name: str, issue_number: int, title: str, body: str) -> TriageResult:
@@ -38,7 +42,7 @@ def triage_issue(repo_name: str, issue_number: int, title: str, body: str) -> Tr
     else:
         suggested_labels.append("priority-medium")
 
-    return TriageResult(
+    result = TriageResult(
         repo=repo_name,
         issue_number=issue_number,
         category=category,
@@ -46,4 +50,13 @@ def triage_issue(repo_name: str, issue_number: int, title: str, body: str) -> Tr
         suggested_labels=suggested_labels,
         reason=f"Matched keywords: {', '.join(matched_keywords)}" if matched_keywords else "No specific keywords matched.",
     )
+    logger.info(
+        "Triage result for %s#%d — category=%s priority=%s labels=%s",
+        repo_name,
+        issue_number,
+        result.category,
+        result.priority,
+        result.suggested_labels,
+    )
+    return result
 
