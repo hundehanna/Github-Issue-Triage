@@ -1,7 +1,9 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from app.models.triage import TriageResult
-from app.services.issue_processor import triage_issue
+from app.services.issue_processor import _keyword_triage, triage_issue
 
 
 # ---------------------------------------------------------------------------
@@ -267,3 +269,41 @@ class TestTriageResultModel:
                 suggested_labels=["bug"],
                 reason="test",
             )
+
+
+# ---------------------------------------------------------------------------
+# LLM dispatch
+# ---------------------------------------------------------------------------
+
+class TestLLMDispatch:
+    def test_uses_keyword_fallback_without_api_key(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        result = triage_issue("owner/repo", 1, "App crashes", "")
+        assert result.category == "Bug"
+
+    @patch("app.services.issue_processor.classify_with_llm")
+    def test_uses_llm_when_api_key_set(self, mock_classify, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-key")
+        fake = TriageResult(
+            repo="owner/repo",
+            issue_number=1,
+            category="Feature Request",
+            priority="Low",
+            suggested_labels=["feature-request"],
+            reason="LLM said so",
+        )
+        mock_classify.return_value = fake
+
+        result = triage_issue("owner/repo", 1, "Add dark mode", "")
+
+        mock_classify.assert_called_once()
+        assert result.category == "Feature Request"
+
+    @patch("app.services.issue_processor.classify_with_llm")
+    def test_falls_back_to_keywords_on_llm_error(self, mock_classify, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-key")
+        mock_classify.side_effect = Exception("API down")
+
+        result = triage_issue("owner/repo", 1, "App crashes on startup", "")
+
+        assert result.category == "Bug"  # keyword matched "crashes"
