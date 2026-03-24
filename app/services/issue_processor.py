@@ -6,6 +6,8 @@ from app.services.llm_service import classify_with_llm
 
 logger = logging.getLogger(__name__)
 
+logger = logging.getLogger(__name__)
+
 
 def triage_issue(repo_name: str, issue_number: int, title: str, body: str) -> TriageResult:
     """Triage a GitHub issue.
