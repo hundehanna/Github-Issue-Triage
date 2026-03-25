@@ -43,6 +43,7 @@ _TRIAGE_TOOL = {
 _SYSTEM_PROMPT = (
     "You are a senior open-source maintainer performing issue triage. "
     "Analyse the provided GitHub issue and call the triage_issue tool with your assessment. "
+    "Use the provided repository context to inform your triage where relevant. "
     "Be concise and consistent."
 )
 
@@ -53,6 +54,7 @@ def classify_with_llm(
     title: str,
     body: str,
     *,
+    context: str = "",
     api_key: str | None = None,
     model: str = "claude-haiku-4-5-20251001",
 ) -> TriageResult:
@@ -60,6 +62,8 @@ def classify_with_llm(
     client = anthropic.Anthropic(api_key=api_key or os.getenv("ANTHROPIC_API_KEY"))
 
     user_content = f"Repository: {repo}\n\nTitle: {title}\n\nBody:\n{body or '(no body)'}"
+    if context:
+        user_content += f"\n\n--- Relevant context from repository ---\n{context}"
 
     logger.debug("Sending issue %s#%d to LLM for triage", repo, issue_number)
     response = client.messages.create(
