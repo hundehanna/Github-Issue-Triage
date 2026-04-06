@@ -1,16 +1,26 @@
 import hashlib
 import hmac
+import json
 import logging
+import os
 
 from fastapi import FastAPI, Header, HTTPException, Request
+from pydantic import BaseModel
 
-from app.services.github_client import GitHubClient
+from app.logging_config import configure_logging
+from app.services.github_client import GitHubClient, build_triage_comment
 from app.services.issue_processor import triage_issue
+from app.services.metrics import metrics
 
+configure_logging()
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="GitHub Issue Triage")
 
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def _verify_signature(payload_bytes: bytes, signature: str, secret: str) -> bool:
     """Verify GitHub webhook HMAC-SHA256 signature."""
@@ -20,9 +30,52 @@ def _verify_signature(payload_bytes: bytes, signature: str, secret: str) -> bool
     return hmac.compare_digest(expected, signature)
 
 
+def _format_triage_comment(result) -> str:
+    return build_triage_comment(result)
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/metrics")
+def get_metrics():
+    """Return current in-process triage metrics."""
+    return metrics.to_dict()
+
+
+class FeedbackPayload(BaseModel):
+    verdict: str  # "correct" | "incorrect" | "overridden"
+    note: str = ""
+
+
+@app.post("/feedback/{repo_owner}/{repo_name}/{issue_number}")
+def post_feedback(repo_owner: str, repo_name: str, issue_number: int, body: FeedbackPayload):
+    """Record maintainer feedback on a triage result.
+
+    verdict must be one of: correct, incorrect, overridden
+    """
+    valid = {"correct", "incorrect", "overridden"}
+    if body.verdict not in valid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid verdict '{body.verdict}'. Must be one of: {', '.join(sorted(valid))}",
+        )
+    repo = f"{repo_owner}/{repo_name}"
+    logger.info(
+        "Feedback received — repo=%s issue=%d verdict=%s note=%r",
+        repo,
+        issue_number,
+        body.verdict,
+        body.note,
+    )
+    metrics.record_feedback(body.verdict)
+    return {"repo": repo, "issue_number": issue_number, "verdict": body.verdict, "recorded": True}
 
 
 @app.post("/webhooks/github")
@@ -31,10 +84,7 @@ async def github_webhook(
     x_github_event: str | None = Header(default=None),
     x_hub_signature_256: str | None = Header(default=None),
 ):
-    import os
-
     webhook_secret = os.getenv("GITHUB_WEBHOOK_SECRET")
-
     raw_body = await request.body()
 
     if webhook_secret:
@@ -50,7 +100,6 @@ async def github_webhook(
         raise HTTPException(status_code=400, detail=f"Unsupported event: {x_github_event}")
 
     try:
-        import json
         payload = json.loads(raw_body)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
@@ -97,15 +146,3 @@ async def github_webhook(
         "issue_title": title,
         "triage": triage_result.model_dump(),
     }
-
-
-def _format_triage_comment(result) -> str:
-    labels = ", ".join(f"`{l}`" for l in result.suggested_labels)
-    return (
-        "## Automated Triage Result\n\n"
-        f"**Category**: {result.category}\n"
-        f"**Priority**: {result.priority}\n"
-        f"**Suggested Labels**: {labels}\n"
-        f"**Reason**: {result.reason}\n\n"
-        "_This triage was generated automatically. Maintainers may override these suggestions._"
-    )

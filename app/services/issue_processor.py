@@ -3,6 +3,7 @@ import os
 
 from app.models.triage import TriageResult
 from app.services.llm_service import classify_with_llm
+from app.services.metrics import metrics, track_triage_duration
 
 logger = logging.getLogger(__name__)
 
@@ -14,19 +15,31 @@ def triage_issue(repo_name: str, issue_number: int, title: str, body: str) -> Tr
     2. Use the LLM with that context when ANTHROPIC_API_KEY is set.
     3. Fall back to keyword-based heuristics on any error or missing key.
     4. Index the completed triage result for future RAG retrieval.
+    5. Record metrics.
     """
     context = _get_rag_context(title, body)
 
+    used_llm = False
     result: TriageResult | None = None
-    if os.getenv("ANTHROPIC_API_KEY"):
+
+    with track_triage_duration() as timing:
         try:
-            result = classify_with_llm(repo_name, issue_number, title, body, context=context)
+            if os.getenv("ANTHROPIC_API_KEY"):
+                try:
+                    result = classify_with_llm(repo_name, issue_number, title, body, context=context)
+                    used_llm = True
+                except Exception as exc:
+                    logger.warning("LLM triage failed, falling back to keyword matching: %s", exc)
+                    metrics.record_error()
+
+            if result is None:
+                result = _keyword_triage(repo_name, issue_number, title, body)
         except Exception as exc:
-            logger.warning("LLM triage failed, falling back to keyword matching: %s", exc)
+            logger.error("Triage failed entirely for %s#%d: %s", repo_name, issue_number, exc)
+            metrics.record_error()
+            raise
 
-    if result is None:
-        result = _keyword_triage(repo_name, issue_number, title, body)
-
+    metrics.record_triage(result, used_llm=used_llm, latency_ms=timing["latency_ms"])
     _index_result(repo_name, issue_number, title, body, result)
     return result
 
