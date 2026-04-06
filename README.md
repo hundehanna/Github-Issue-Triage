@@ -1,74 +1,144 @@
-# AI-Powered GitHub Issue Triage
+# GitHub Issue Triage
 
-An AI-powered service that automatically classifies and prioritizes GitHub issues using large language models (LLMs).
+An AI-powered service that automatically classifies, prioritizes, and labels GitHub issues using large language models and retrieval-augmented generation (RAG).
 
-# Overview
+---
 
-Managing GitHub issues can become overwhelming as projects scale. Manual triage is time-consuming and inconsistent, especially in fast-moving teams.
+## Overview
 
-This project introduces an intelligent triage assistant that:
+Managing GitHub issues at scale is time-consuming and inconsistent. This service hooks into GitHub webhooks to triage new issues in real time — no manual review needed for the initial pass.
 
-  - Classifies new issues (bug, feature request, question, documentation, etc.)
-  
-  - Assigns priority levels
-  
-  - Suggests relevant labels
-  
-  - Posts a structured triage summary as a comment
+When a new issue is opened, the service:
 
-The system integrates directly with GitHub using webhooks and processes issues in real time.
+1. Retrieves relevant context from your repository docs and past issues (RAG)
+2. Sends the issue to Claude for classification (falls back to keyword matching if no API key)
+3. Applies labels automatically via the GitHub API
+4. Posts a structured triage summary as a comment
 
-## Key Features (MVP Scope)
+---
 
-  - GitHub webhook integration
+## Features
 
-  - Automated issue classification
+- **Automated classification** — Bug, Feature Request, Documentation, Question, Other
+- **Priority inference** — High, Medium, Low based on content signals
+- **Label management** — Suggests and auto-creates labels, applies them to the issue
+- **RAG context** — Embeds your repository docs and past issues into ChromaDB for richer LLM context
+- **Webhook signature verification** — HMAC-SHA256 validation of all incoming GitHub events
+- **Observability** — Structured logging, in-process metrics endpoint (`GET /metrics`)
+- **Feedback loop** — Maintainers can rate triage accuracy via `POST /feedback`
+- **Graceful degradation** — Every external dependency (LLM, RAG, GitHub API) degrades silently so triage always completes
 
-  - Priority inference
+---
 
-  - Suggested label generation
+## Quick Start
 
-  - Structured triage summary comment
+```bash
+# 1. Clone and install
+git clone https://github.com/hundehanna/Github-Issue-Triage.git
+cd Github-Issue-Triage
+pip install .
 
-## Architecture (High-Level)
+# 2. Configure environment
+cp .env.example .env   # edit with your keys
 
-1. A new GitHub issue is created.
+# 3. Run
+uvicorn app.main:app --reload --port 8000
 
-2. GitHub sends a webhook event to the backend service.
+# 4. Expose via ngrok (for local webhook testing)
+ngrok http 8000
+```
 
-3. The backend extracts issue data (title + description).
+Then configure a GitHub webhook pointing to `https://<your-ngrok-url>/webhooks/github` with event type **Issues**.
 
-4. An LLM analyzes the content and returns structured triage metadata.
+See [docs/how-to.md](docs/how-to.md) for the full setup guide with examples.
 
-5. The service applies labels and posts a triage summary comment.
+---
 
-## Status
+## Example Triage Comment
 
-🚧 Currently in active development (MVP phase).
+When an issue is created, the bot posts:
 
-Planned future improvements include:
+> ## 🤖 Automated Issue Triage
+>
+> | Field | Value |
+> |---|---|
+> | **Category** | 🐛 Bug |
+> | **Priority** | 🔴 High |
+> | **Suggested Labels** | `bug`, `priority-high` |
+>
+> **Reason:** The issue describes a crash on startup with a traceback; blocking keyword indicates high priority.
+>
+> _This triage was performed automatically. A maintainer will review shortly._
 
-  - Duplicate issue detection
+---
 
-  - Team/owner suggestion
+## API Endpoints
 
-  - Confidence scoring
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/health` | Health check |
+| `POST` | `/webhooks/github` | GitHub webhook receiver |
+| `GET` | `/metrics` | Triage metrics (counts, latency, breakdown) |
+| `POST` | `/feedback/{owner}/{repo}/{issue}` | Submit maintainer feedback on triage accuracy |
 
-  - Evaluation and logging framework
+---
 
-## Tech Stack 
+## Environment Variables
 
-  - Python
-  
-  - FastAPI (backend service)
-  
-  - GitHub Webhooks & API
-  
-  - LLM integration (OpenAI / compatible models)
-  
-  - Ngrok (for local webhook testing)
+| Variable | Required | Description |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | No | Enables LLM triage via Claude. Falls back to keyword matching if unset. |
+| `GITHUB_TOKEN` | No | Enables posting comments and applying labels on GitHub. |
+| `GITHUB_WEBHOOK_SECRET` | No | Validates HMAC-SHA256 signatures. Recommended in production. |
+| `LOG_LEVEL` | No | `DEBUG` / `INFO` / `WARNING` / `ERROR` (default: `INFO`) |
+| `LOG_FORMAT` | No | `text` or `json` (default: `text`) |
+| `DOCS_DIR` | No | Path to Markdown docs to ingest into the RAG vector store. |
 
-### Author
+---
 
-Hanna Hunde
-*(Software Engineer | Aspiring AI Engineer)*
+## Architecture
+
+```
+GitHub Repository
+      │
+      ▼ (webhook on issue opened)
+FastAPI Backend  ──► Issue Processor
+                         │
+                         ├── RAG Retrieval (ChromaDB)
+                         ├── LLM Service (Anthropic Claude)
+                         │     └── keyword fallback
+                         ├── GitHub Client (labels + comment)
+                         └── Metrics
+```
+
+---
+
+## Tech Stack
+
+- **Backend**: Python, FastAPI
+- **LLM**: Anthropic Claude (`claude-haiku-4-5`)
+- **RAG**: ChromaDB vector store
+- **GitHub Integration**: Webhooks + REST API via httpx
+- **Testing**: pytest (137 tests)
+
+---
+
+## Running Tests
+
+```bash
+pytest tests/ -v
+```
+
+---
+
+## Documentation
+
+- [How-To Guide](docs/how-to.md) — full setup, examples, and API reference
+- [Project Spec](docs/project_spec.md) — original specification and phase breakdown
+
+---
+
+## Author
+
+**Hanna Hunde**
+*Software Engineer | Aspiring AI Engineer*
