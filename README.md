@@ -141,4 +141,4 @@ pytest tests/ -v
 ## Author
 
 **Hanna Hunde**
-*Software Engineer | Aspiring AI Engineer*
+*Software Engineer*
