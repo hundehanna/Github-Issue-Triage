@@ -93,6 +93,9 @@ When an issue is created, the bot posts:
 | `LOG_LEVEL` | No | `DEBUG` / `INFO` / `WARNING` / `ERROR` (default: `INFO`) |
 | `LOG_FORMAT` | No | `text` or `json` (default: `text`) |
 | `DOCS_DIR` | No | Path to Markdown docs to ingest into the RAG vector store. |
+| `LANGCHAIN_TRACING_V2` | No | Set to `true` to enable LangSmith tracing of every LLM chain invocation. |
+| `LANGCHAIN_API_KEY` | No | Your LangSmith API key (required when tracing is enabled). |
+| `LANGCHAIN_PROJECT` | No | LangSmith project name to send traces to (default: `default`). |
 
 ---
 
@@ -116,7 +119,8 @@ FastAPI Backend  ──► Issue Processor
 ## Tech Stack
 
 - **Backend**: Python, FastAPI
-- **LLM**: Anthropic Claude (`claude-haiku-4-5`)
+- **LLM**: Anthropic Claude (`claude-haiku-4-5`) via LangChain
+- **Tracing**: LangSmith (auto-enabled via `LANGCHAIN_TRACING_V2`)
 - **RAG**: ChromaDB vector store
 - **GitHub Integration**: Webhooks + REST API via httpx
 - **Testing**: pytest (137 tests)

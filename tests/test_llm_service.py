@@ -1,39 +1,58 @@
-"""Tests for the LLM triage service.
+"""Tests for the LangChain-based LLM triage service.
 
-All tests mock the Anthropic client so no real API calls are made.
+We mock the ChatAnthropic model so no real API calls are made.
+
+The chain is:  ChatPromptTemplate | ChatAnthropic.with_structured_output(TriageOutput)
+
+Strategy: patch `langchain_anthropic.ChatAnthropic` so that
+`llm.with_structured_output(TriageOutput)` returns a real `RunnableLambda`
+that emits a fake TriageOutput. The lambda receives the rendered prompt as
+input, so we can also assert what variables were passed in.
 """
-
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+from langchain_core.runnables import RunnableLambda
 
-from app.services.llm_service import classify_with_llm
+from app.services.llm_service import TriageOutput, classify_with_llm
 
 
-def _make_llm_response(category="Bug", priority="High", labels=None, reason="test reason"):
-    """Build a fake Anthropic messages.create() response."""
-    if labels is None:
-        labels = ["bug", "priority-high"]
-    tool_use_block = SimpleNamespace(
-        type="tool_use",
-        input={
-            "category": category,
-            "priority": priority,
-            "suggested_labels": labels,
-            "reason": reason,
-        },
+def _fake_output(
+    category="Bug",
+    priority="High",
+    labels=None,
+    reason="test reason",
+) -> TriageOutput:
+    return TriageOutput(
+        category=category,
+        priority=priority,
+        suggested_labels=labels or ["bug", "priority-high"],
+        reason=reason,
     )
-    return SimpleNamespace(content=[tool_use_block])
 
 
-@patch("app.services.llm_service.anthropic.Anthropic")
-def test_classify_returns_triage_result(mock_anthropic_cls):
-    mock_client = MagicMock()
-    mock_anthropic_cls.return_value = mock_client
-    mock_client.messages.create.return_value = _make_llm_response(
-        category="Bug", priority="High", labels=["bug", "priority-high"], reason="Crash in prod"
-    )
+def _patch_chat_anthropic(mock_cls, output: TriageOutput, capture: list | None = None):
+    """Wire up mock_cls so chain `_PROMPT | llm.with_structured_output(...)` returns `output`.
+
+    If `capture` is provided, each invocation of the lambda appends the rendered
+    prompt to it so tests can inspect what reached the LLM stage.
+    """
+    def _lambda(prompt_value):
+        if capture is not None:
+            capture.append(prompt_value)
+        return output
+
+    mock_llm = MagicMock()
+    mock_llm.with_structured_output.return_value = RunnableLambda(_lambda)
+    mock_cls.return_value = mock_llm
+    return mock_llm
+
+
+@patch("app.services.llm_service.ChatAnthropic")
+def test_classify_returns_triage_result(mock_cls):
+    _patch_chat_anthropic(mock_cls, _fake_output(
+        category="Bug", priority="High", labels=["bug", "priority-high"], reason="Crash in prod",
+    ))
 
     result = classify_with_llm("owner/repo", 42, "App crashes on startup", "", api_key="fake")
 
@@ -45,27 +64,38 @@ def test_classify_returns_triage_result(mock_anthropic_cls):
     assert result.issue_number == 42
 
 
-@patch("app.services.llm_service.anthropic.Anthropic")
-def test_classify_passes_correct_args_to_api(mock_anthropic_cls):
-    mock_client = MagicMock()
-    mock_anthropic_cls.return_value = mock_client
-    mock_client.messages.create.return_value = _make_llm_response()
+@patch("app.services.llm_service.ChatAnthropic")
+def test_classify_renders_title_and_body_into_prompt(mock_cls):
+    captured: list = []
+    _patch_chat_anthropic(mock_cls, _fake_output(), capture=captured)
 
     classify_with_llm("owner/repo", 1, "My title", "My body", api_key="fake")
 
-    call_kwargs = mock_client.messages.create.call_args.kwargs
-    assert call_kwargs["tool_choice"] == {"type": "tool", "name": "triage_issue"}
-    assert "My title" in call_kwargs["messages"][0]["content"]
-    assert "My body" in call_kwargs["messages"][0]["content"]
+    # captured[0] is the rendered ChatPromptValue. Stringifying gives the messages.
+    rendered = str(captured[0])
+    assert "My title" in rendered
+    assert "My body" in rendered
+    assert "owner/repo" in rendered
 
 
-@patch("app.services.llm_service.anthropic.Anthropic")
-def test_classify_feature_request(mock_anthropic_cls):
-    mock_client = MagicMock()
-    mock_anthropic_cls.return_value = mock_client
-    mock_client.messages.create.return_value = _make_llm_response(
-        category="Feature Request", priority="Low", labels=["feature-request", "priority-low"]
-    )
+@patch("app.services.llm_service.ChatAnthropic")
+def test_classify_includes_context_section(mock_cls):
+    captured: list = []
+    _patch_chat_anthropic(mock_cls, _fake_output(), capture=captured)
+
+    classify_with_llm("owner/repo", 1, "title", "body",
+                     context="some retrieved doc", api_key="fake")
+
+    rendered = str(captured[0])
+    assert "some retrieved doc" in rendered
+
+
+@patch("app.services.llm_service.ChatAnthropic")
+def test_classify_feature_request(mock_cls):
+    _patch_chat_anthropic(mock_cls, _fake_output(
+        category="Feature Request", priority="Low",
+        labels=["feature-request", "priority-low"],
+    ))
 
     result = classify_with_llm("owner/repo", 7, "Add dark mode", "", api_key="fake")
 
@@ -73,11 +103,14 @@ def test_classify_feature_request(mock_anthropic_cls):
     assert result.priority == "Low"
 
 
-@patch("app.services.llm_service.anthropic.Anthropic")
-def test_classify_propagates_api_error(mock_anthropic_cls):
-    mock_client = MagicMock()
-    mock_anthropic_cls.return_value = mock_client
-    mock_client.messages.create.side_effect = Exception("API unavailable")
+@patch("app.services.llm_service.ChatAnthropic")
+def test_classify_propagates_api_error(mock_cls):
+    def _raise(_):
+        raise Exception("API unavailable")
+
+    mock_llm = MagicMock()
+    mock_llm.with_structured_output.return_value = RunnableLambda(_raise)
+    mock_cls.return_value = mock_llm
 
     with pytest.raises(Exception, match="API unavailable"):
         classify_with_llm("owner/repo", 1, "title", "body", api_key="fake")
