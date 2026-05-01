@@ -4,10 +4,6 @@ import pytest
 
 from app.models.triage import TriageResult
 from app.services.issue_processor import _keyword_triage, triage_issue
-import pytest
-
-from app.models.triage import TriageResult
-from app.services.issue_processor import triage_issue
 
 
 # ---------------------------------------------------------------------------
