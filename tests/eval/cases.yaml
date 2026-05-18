@@ -1,0 +1,192 @@
+# Eval suite: 10 hand-crafted issue scenarios.
+#
+# Each case lists the issue payload, what the triage decision *should* be, and
+# (where relevant) which doc the retrieval *should* have pulled. Used by
+# tests/eval/run_eval.py — these are NOT run by pytest.
+#
+# Sources:
+#   1-4   from our manual smoke test conversation (Gemini's actual responses
+#         on these inputs looked reasonable, so we treat them as reference)
+#   5-10  doc-grounded: the answer to each question lives in a specific
+#         section of a specific .md file, so we can measure whether the
+#         chunking + retrieval surfaced the right context.
+
+# ─────────────────────────────────────────────────────────────────────
+# Group 1 — Triage-quality cases (no retrieval requirement)
+# These exercise pure LLM judgment. They have no `retrieval` block
+# because they don't require docs to triage correctly.
+# ─────────────────────────────────────────────────────────────────────
+
+- id: bug_npe_blocking_release
+  title: "App crashes on startup with NullPointerException"
+  body: |
+    Getting a NPE when I run the app. Traceback shows it is happening in the
+    auth module. This is blocking our release tomorrow.
+  expected:
+    triage:
+      category: Bug
+      priority: High
+      must_have_labels: [bug, priority-high]
+      must_not_have_labels: [feature-request, question]
+  notes: "Classic high-priority bug with clear keywords."
+
+- id: feature_dark_mode
+  title: "Would love dark mode support"
+  body: |
+    My eyes hurt at night when using the dashboard. Could we add a theme toggle?
+  expected:
+    triage:
+      category: Feature Request
+      priority_acceptable: [Low, Medium]
+      must_have_labels: [feature-request]
+      must_not_have_labels: [bug, priority-high]
+  notes: "Quality-of-life feature request, no urgency signal."
+
+- id: vague_complaint
+  title: "This thing isn't great"
+  body: |
+    It just kind of works but I dont like how it feels.
+  expected:
+    triage:
+      category_acceptable: [Question, Other]
+      priority: Low
+      must_have_labels: [needs-info]
+      must_not_have_labels: [bug, priority-high]
+  notes: "Tests that the LLM asks for more info instead of guessing."
+
+- id: ambiguous_readme_wrong
+  title: "README install section is wrong"
+  body: |
+    The npm install command in the README points to an old package name.
+    New installations fail with this command.
+  expected:
+    triage:
+      # Both are defensible — broken docs vs broken UX. We accept either.
+      category_acceptable: [Bug, Documentation]
+      priority_acceptable: [Medium, High]
+      must_have_labels_any_of: [bug, documentation]
+  notes: |
+    Tests handling of an ambiguous case. There's no single "right" answer —
+    a maintainer could classify this either way. The eval accepts either,
+    but flags it if a future change makes the system pick something wild.
+
+# ─────────────────────────────────────────────────────────────────────
+# Group 2 — Doc-grounded cases (test retrieval quality)
+# Each case poses a question whose answer lives in a specific section
+# of a specific .md file. The eval checks BOTH the triage decision
+# AND whether retrieval surfaced the right doc.
+# ─────────────────────────────────────────────────────────────────────
+
+- id: q_webhook_signature_verification
+  title: "How do I verify webhook signatures coming from GitHub?"
+  body: |
+    I want to make sure the webhook requests are really coming from GitHub
+    and not from someone spoofing them. How does this app handle that?
+  expected:
+    triage:
+      category: Question
+      priority_acceptable: [Low, Medium]
+    retrieval:
+      # Answer lives in how-to.md sections 2 (env var) and 5 (webhook config)
+      must_retrieve_from: [how-to.md]
+      expected_keywords_in_context:
+        - GITHUB_WEBHOOK_SECRET
+  notes: |
+    Tests that doc retrieval pulls the section explaining HMAC-SHA256
+    signature verification with the GITHUB_WEBHOOK_SECRET env var.
+
+- id: q_json_logging_env_var
+  title: "How do I get JSON-formatted logs for production?"
+  body: |
+    Running this in Kubernetes, our log aggregator expects JSON. What env
+    var do I set?
+  expected:
+    triage:
+      category: Question
+      priority: Low
+    retrieval:
+      # Answer is LOG_FORMAT=json, in how-to.md section 2 + env var table
+      must_retrieve_from: [how-to.md]
+      expected_keywords_in_context:
+        - LOG_FORMAT
+  notes: |
+    The answer (LOG_FORMAT=json) sits in the env var reference table at
+    the bottom of how-to.md. Tests whether chunking preserves the table
+    rows together.
+
+- id: q_docs_ingestion_command
+  title: "How do I ingest my repository's docs into the RAG store?"
+  body: |
+    I want the LLM to have context from our internal documentation when it
+    triages. What's the command or env var for that?
+  expected:
+    triage:
+      category: Question
+      priority: Low
+    retrieval:
+      # Answer in how-to.md section 7
+      must_retrieve_from: [how-to.md]
+      expected_keywords_in_context:
+        - doc_ingestor
+        - DOCS_DIR
+  notes: |
+    Tests retrieval of the RAG ingestion section. Bonus: this section has
+    both a command line and an env var, so retrieval needs to pull either.
+
+- id: q_feedback_verdicts_meaning
+  title: "What do the different feedback verdicts mean?"
+  body: |
+    I see I can POST correct, incorrect, or overridden to /feedback — what's
+    the practical difference? When should I use which?
+  expected:
+    triage:
+      category: Question
+      priority: Low
+    retrieval:
+      must_retrieve_from: [how-to.md]
+      expected_keywords_in_context:
+        - overridden
+        - incorrect
+  notes: |
+    The verdicts table is in how-to.md section 9. Tests whether the table
+    survives the chunking process intact.
+
+- id: q_categories_supported
+  title: "What issue categories does the triage system produce?"
+  body: |
+    Trying to set up label colors in advance. What are the possible
+    categories the LLM will choose between?
+  expected:
+    triage:
+      category: Question
+      priority: Low
+    retrieval:
+      must_retrieve_from: [project_spec.md]
+      expected_keywords_in_context:
+        - Bug
+        - Feature Request
+        - Documentation
+        - Question
+  notes: |
+    The 5 categories are listed in project_spec.md under "Primary Goals".
+    Tests retrieval across docs (not just how-to.md).
+
+- id: bug_metrics_endpoint_404
+  title: "GET /metrics returns 404 in production"
+  body: |
+    The /metrics endpoint works locally but returns 404 when I deploy to
+    production behind nginx. The README says this endpoint should exist.
+    Is there a config flag I'm missing?
+  expected:
+    triage:
+      category_acceptable: [Bug, Question]
+      priority_acceptable: [Medium, High]
+      must_have_labels_any_of: [bug, question, needs-info]
+    retrieval:
+      # README mentions /metrics in the API endpoint table
+      must_retrieve_from: [README.md, how-to.md]
+      expected_keywords_in_context:
+        - /metrics
+  notes: |
+    A realistic mixed case — could be a bug, could be a config question.
+    Tests retrieval across both top-level README and how-to.md.

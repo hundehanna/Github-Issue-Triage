@@ -42,13 +42,16 @@ class TriageOutput(BaseModel):
         description="The nature of the issue."
     )
     priority: Literal["High", "Medium", "Low"] = Field(
-        description="Urgency level based on impact and severity."
+        default="Medium",
+        description="Urgency level based on impact and severity.",
     )
     suggested_labels: list[str] = Field(
-        description="GitHub labels to apply (e.g. 'bug', 'priority-high')."
+        default_factory=list,
+        description="GitHub labels to apply (e.g. 'bug', 'priority-high').",
     )
     reason: str = Field(
-        description="One or two sentences explaining the triage decision."
+        default="(no reason provided)",
+        description="One or two sentences explaining the triage decision.",
     )
 
 

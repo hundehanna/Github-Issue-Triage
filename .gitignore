@@ -38,3 +38,7 @@ wheels/
 .pytest_cache/
 .coverage
 htmlcov/
+
+
+# Eval suite local results
+tests/eval/results/
