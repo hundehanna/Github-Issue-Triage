@@ -4,6 +4,13 @@ import json
 import logging
 import os
 
+# Load .env before any other app imports so env vars are available everywhere.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 from fastapi import FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel
 
