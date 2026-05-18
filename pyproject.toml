@@ -9,6 +9,7 @@ dependencies = [
     "langchain-anthropic>=0.3.0",
     "langchain-core>=0.3.0",
     "langchain-google-genai>=2.0.0",
+    "langchain-text-splitters>=0.3.0",
     "chromadb>=0.6.0",
     "fastapi>=0.129.0",
     "httpx>=0.28.1",
