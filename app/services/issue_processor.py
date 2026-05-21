@@ -8,11 +8,21 @@ from app.services.metrics import metrics, track_triage_duration
 logger = logging.getLogger(__name__)
 
 
+def _llm_credentials_present() -> bool:
+    """Return True when the active LLM_PROVIDER has its API key set in env."""
+    provider = os.getenv("LLM_PROVIDER", "anthropic").lower()
+    if provider == "gemini":
+        return bool(os.getenv("GOOGLE_API_KEY"))
+    if provider == "anthropic":
+        return bool(os.getenv("ANTHROPIC_API_KEY"))
+    return False
+
+
 def triage_issue(repo_name: str, issue_number: int, title: str, body: str) -> TriageResult:
     """Triage a GitHub issue.
 
     1. Retrieve relevant context from the RAG vector store (if available).
-    2. Use the LLM with that context when ANTHROPIC_API_KEY is set.
+    2. Use the LLM with that context when the active provider's API key is set.
     3. Fall back to keyword-based heuristics on any error or missing key.
     4. Index the completed triage result for future RAG retrieval.
     5. Record metrics.
@@ -24,7 +34,7 @@ def triage_issue(repo_name: str, issue_number: int, title: str, body: str) -> Tr
 
     with track_triage_duration() as timing:
         try:
-            if os.getenv("ANTHROPIC_API_KEY"):
+            if _llm_credentials_present():
                 try:
                     result = classify_with_llm(repo_name, issue_number, title, body, context=context)
                     used_llm = True
