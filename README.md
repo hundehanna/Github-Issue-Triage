@@ -174,4 +174,5 @@ Python · FastAPI · Pydantic · LangChain · ChromaDB · Anthropic Claude · Go
 
 ## Author
 
-**Hanna Hunde** — Software Engineer
+**Hanna Hunde**
+*Software Engineer*
