@@ -168,11 +168,11 @@ python -m tests.eval.run_eval --label my-experiment
 
 ## Tech
 
-Python · FastAPI · Pydantic · LangChain · ChromaDB · Anthropic Claude · Google Gemini · httpx · pytest
+Python · FastAPI · Pydantic · LangChain · LangSmith · ChromaDB · Anthropic Claude · Google Gemini · httpx · pytest 
 
 ---
 
 ## Author
 
 **Hanna Hunde**
-*Software Engineer*
+
